@@ -1,190 +1,127 @@
-# HDR flicker fix for the Steam Machine (HDMI 2.1, 4K 120Hz)
+# HDR Flicker Fix
 
-With HDR on at **4K 120Hz** over HDMI 2.1, some TVs flicker every 20 seconds or so, or lose the signal entirely. This fix stops it by capping the Steam Machine's HDMI output at **10-bit color**.
+Stops your TV from flickering or showing "No signal" when HDR is on at **4K 120Hz**.
 
-You lose nothing visible. HDR games are made in 10-bit, and everything else is 8-bit.
-
-## At a glance
-
-| | |
-|---|---|
-| **Fixes** | Flicker or "No signal" with HDR at 4K 120Hz over HDMI 2.1 |
-| **Time needed** | About 10 minutes, including one restart |
-| **Try before installing** | Yes. The test mode lasts only until the next restart. |
-| **Undo** | One command, then a restart |
-| **If something goes wrong** | The Steam Machine falls back to your TV's own settings. The flicker may return, but the picture won't go black. |
-
-## Commands
-
-Run each command from the fix's folder (see [Install](#install)).
-
-| Command | What it does |
-|---|---|
-| `sudo bash edid-10bpc.sh status` | Shows whether the fix is needed or active |
-| `sudo bash edid-10bpc.sh test` | Turns the fix on until the next restart |
-| `sudo bash edid-10bpc.sh test-revert` | Turns the test off without restarting |
-| `sudo bash edid-10bpc.sh install` | Turns the fix on permanently |
-| `sudo bash edid-10bpc.sh uninstall` | Removes the fix completely |
-
-## Does this apply to you?
-
-This fix is for you if all of the following are true:
-
-- Your Steam Machine runs SteamOS with HDMI 2.1 enabled by the community [steam-machine-hdmi21](https://github.com/beaglemoo/steam-machine-hdmi21) patch.
-- The screen flickers or drops to "No signal" at **4K 120Hz with HDR on**, even with VRR off.
-- The problem goes away at **4K 60Hz**.
-
-The `status` command (step 3 below) confirms it: before the fix, it shows the HDMI link running at **12-bit**.
-
-Tested on a TCL 65Q750G with SteamOS 3.9.5 and kernel 7.2.7-valve2. The HDMI 2.1 patch's author has tested the patch itself only on an LG C4.
-
-## Why it happens
-
-Your TV tells the Steam Machine which color depths it supports, using a small built-in data file called the **EDID**. When the EDID lists 12-bit color, the patched driver uses 12-bit at 4K 120Hz without checking that it fits through the HDMI link.
-
-On TVs whose HDMI 2.1 link tops out at 48 Gbps (12 Gbps on each of 4 lanes), about **42.67 Gbps** is left for the picture after encoding:
-
-| Mode (RGB 4:4:4) | Pixel clock | 10-bit | 12-bit |
-|---|---|---|---|
-| 4K 120Hz (standard timing, 4400 × 2250) | 1188 MHz | ~35.6 Gbps | **~42.8 Gbps** |
-| 4K 144Hz (TCL 65Q750G timing) | 1343.5 MHz | ~40.3 Gbps | ~48.4 Gbps |
-
-12-bit at 4K 120Hz needs slightly more than the link can carry. The link keeps failing and reconnecting, and each reconnect is a flicker. At 10-bit, it fits with room to spare.
-
-These figures are pixel clock × bits per pixel. They leave out error-correction and packet overhead, so the real headroom is smaller than shown. 4K 144Hz HDR at 10-bit is close to the limit and has not been tested.
-
-## What the fix changes
-
-The fix gives the driver an edited copy of your TV's EDID that no longer lists 12-bit or 16-bit color. Nothing else in the EDID changes.
-
-`edid-10bpc.py` clears only these flags, then recalculates the checksums:
-
-| EDID section | Flags cleared | Left as is |
-|---|---|---|
-| HDMI 1.4 VSDB (OUI 00-0C-03), byte 6 | DC_36bit, DC_48bit (12- and 16-bit 4:4:4) | DC_30bit, DC_Y444 |
-| HDMI Forum VSDB or HF-SCDB, byte 7 | DC_36bit_420, DC_48bit_420 | DC_30bit_420, FRL rate |
-| EDID 1.4 base block, byte 20 | A declared depth above 10 bits is lowered to 10 | Everything else |
-
-The permanent install (`edid-10bpc.sh install`) then:
-
-1. Saves your TV's own EDID to `/etc/firmware-edid/original-HDMI-A-1.bin`.
-2. Writes the edited copy to `/etc/firmware-edid/edid/HDMI-A-1-10bpc.bin`.
-3. Adds the edited copy to the boot image (`/etc/mkinitcpio.conf.d/90-edid-10bpc.conf`), so it is available before the graphics driver starts.
-4. Adds `firmware_class.path=/etc/firmware-edid drm.edid_firmware=HDMI-A-1:edid/HDMI-A-1-10bpc.bin` to the boot options (`/etc/default/grub.d/edid-10bpc.cfg`), the same way the HDMI 2.1 patch adds its own.
-5. Lists these files in `/etc/atomic-update.conf.d/edid-10bpc.conf`, so SteamOS updates keep them.
-6. Rebuilds the boot image and the boot menu.
-
-**Fail-safe:** if the edited EDID ever fails to load, the Steam Machine falls back to the TV's own EDID. The worst case is the flicker coming back, not a black screen.
+You won't notice any change in picture quality.
 
 ## Install
 
-### 1. Open a terminal
+1. Press the **Steam** button → **Power** → **Switch to Desktop**.
+2. Open the app menu (bottom left) and start **Konsole**.
+3. Copy this line, paste it into Konsole (right-click → **Paste**), and press **Enter**:
 
-Switch to **Desktop Mode** (Steam button → Power → Switch to Desktop) and open **Konsole** from the application menu. You can also connect over SSH from another computer.
+   ```
+   cd ~ && curl -fsSL https://github.com/Involuntary-commit/Steam-Machine-Tweaks/releases/latest/download/hdr-10bit-fix.tar.gz | tar xz && bash hdr-10bit-fix/edid-10bpc.sh
+   ```
 
-The fix needs `sudo`, which asks for your password. If you have never set one, run `passwd` and choose one first.
+4. Type your password and press **Enter**. Nothing appears while you type. That's normal.
+5. Type **1** and press **Enter** to try the fix.
+6. Unplug the HDMI cable for 5 seconds, then plug it back in.
+7. Flicker gone? Type **2** and press **Enter** to keep the fix, then **y** to restart.
 
-### 2. Download the fix
+**No password yet?** In Konsole, type `passwd`, press **Enter**, and choose one. Then go back to step 3.
 
-```bash
-cd ~
-curl -L https://github.com/Involuntary-commit/Steam-Machine-Tweaks/archive/refs/heads/main.tar.gz | tar xz
-cd Steam-Machine-Tweaks-main/hdr-10bit-fix
-```
+## Remove it
 
-Run all of the following commands from this folder.
+Follow steps 1 to 4 again, then type **3**.
 
-### 3. Check your setup
+## Good to know
 
-Set the display to 4K 120Hz with HDR on, keep the TV on, and run:
+- **Not sure it worked?** Run the same line again. The menu shows `Fix: installed` and `HDMI link: 4:4:4, 10-bit`.
+- **After a SteamOS update:** if the flicker comes back, run the line again and choose **2**.
+- **If anything goes wrong**, the Steam Machine simply uses your TV's normal settings again. The flicker may return, but the screen won't go black.
 
-```bash
-sudo bash edid-10bpc.sh status
-```
+---
 
-If the **HDMI 2.1 link** line shows `12-bit`, this fix applies to you. The output looks like this:
+<details>
+<summary><b>Is this fix for me?</b></summary>
 
-```
-Connector:      HDMI-A-1
-Boot override:  not installed
-EDID in use:
-  12/16-bit color, 4:4:4 (HDMI VSDB): listed (byte 0x08a = 0xb8)
-  12/16-bit color, 4:2:0 (HF-VSDB): listed (byte 0x09a = 0x67)
-HDMI 2.1 link:  4:4:4, 12-bit
-Result: the TV lists 12-bit color, so the driver can pick it. The fix is not active.
-```
+It is if all of these are true:
 
-### 4. Try it until the next restart
+- Your Steam Machine uses the community [HDMI 2.1 patch](https://github.com/beaglemoo/steam-machine-hdmi21) for 4K 120Hz.
+- The screen flickers or says "No signal" at 4K 120Hz with HDR on, even with VRR off.
+- The problem goes away at 4K 60Hz.
 
-This step changes nothing permanently. It only saves a backup of your TV's EDID.
+When you open the menu, it shows `HDMI link: 4:4:4, 12-bit` if the fix applies to you.
 
-```bash
-sudo bash edid-10bpc.sh test
-```
+Tested on a TCL 65Q750G with SteamOS 3.9.5 and kernel 7.2.7-valve2.
 
-Unplug the HDMI cable for 5 seconds, then plug it back in. Watch for flicker for a few minutes, then run `status` again. The link should now show `10-bit` instead of `12-bit`.
+</details>
 
-To undo the test, restart the Steam Machine. To undo it without restarting, run `sudo bash edid-10bpc.sh test-revert` and replug the HDMI cable.
+<details>
+<summary><b>Why it happens</b></summary>
 
-### 5. Make it permanent
+Your TV tells the Steam Machine which color depths it supports, through a small built-in data file called the **EDID**. When the EDID lists 12-bit color, the patched graphics driver uses 12-bit at 4K 120Hz without checking that it fits through the HDMI cable's link.
 
-```bash
-sudo bash edid-10bpc.sh install
-```
+On TVs whose HDMI 2.1 link tops out at 48 Gbps (12 Gbps on each of 4 lanes), about 42.67 Gbps is left for the picture:
 
-This takes a minute or two. At the end, you should see:
+| Mode (RGB 4:4:4) | Pixel clock | 10-bit | 12-bit |
+|---|---|---|---|
+| 4K 120Hz (standard timing) | 1188 MHz | ~35.6 Gbps | **~42.8 Gbps** |
+| 4K 144Hz (TCL 65Q750G timing) | 1343.5 MHz | ~40.3 Gbps | ~48.4 Gbps |
 
-```
-OK: EDID is in /boot/initramfs-linux-neptune-72.img
-OK: boot option is set
-```
+12-bit at 4K 120Hz needs slightly more than the link can carry. The link keeps dropping and reconnecting, and each reconnect is a flicker. At 10-bit, it fits with room to spare.
 
-(The image name depends on your SteamOS version.)
+These figures leave out error-correction overhead, so the real headroom is smaller. 4K 144Hz HDR at 10-bit has not been tested.
 
-Along the way, SteamOS prints `ERROR: module not found: 'blake2b_generic'` and a few "Possibly missing" warnings. These are normal on SteamOS and harmless. The script checks the boot image itself.
+HDR games are made in 10-bit, so capping the output at 10-bit loses nothing visible.
 
-Restart the Steam Machine, then run `status` once more. It should say `Boot override:  installed and active` and show the link at `10-bit`.
+</details>
 
-### TV on a different port
+<details>
+<summary><b>What it changes on your Steam Machine</b></summary>
 
-The commands assume the TV is on `HDMI-A-1`. To check, run `ls /sys/class/drm/`. Port names appear after the card number, as in `card0-HDMI-A-2`. If your TV is on another port, add `CONNECTOR=` and the port name after `sudo` in every command, for example:
+The fix gives the graphics driver an edited copy of your TV's EDID that no longer lists 12-bit or 16-bit color. Nothing else in the EDID changes.
 
-```bash
-sudo CONNECTOR=HDMI-A-2 bash edid-10bpc.sh status
-```
+| EDID section | Flags removed | Left as is |
+|---|---|---|
+| HDMI 1.4 VSDB, byte 6 | DC_36bit, DC_48bit | DC_30bit, DC_Y444 |
+| HDMI Forum VSDB or HF-SCDB, byte 7 | DC_36bit_420, DC_48bit_420 | DC_30bit_420, FRL rate |
+| EDID 1.4 base block, byte 20 | A declared depth above 10 bits is lowered to 10 | Everything else |
 
-## Uninstall
+Installing adds these files:
 
-```bash
-sudo bash edid-10bpc.sh uninstall
-```
+| File | Purpose |
+|---|---|
+| `/etc/firmware-edid/original-HDMI-A-1.bin` | Backup of your TV's own EDID |
+| `/etc/firmware-edid/edid/HDMI-A-1-10bpc.bin` | The edited EDID |
+| `/etc/mkinitcpio.conf.d/90-edid-10bpc.conf` | Puts the edited EDID in the boot image |
+| `/etc/default/grub.d/edid-10bpc.cfg` | Adds the boot option `drm.edid_firmware=HDMI-A-1:edid/HDMI-A-1-10bpc.bin` |
+| `/etc/atomic-update.conf.d/edid-10bpc.conf` | Asks SteamOS updates to keep these files |
 
-Then restart. The backup of your TV's EDID stays in `/etc/firmware-edid/` in case you need it later.
+Removing the fix deletes all of them except the backup.
 
-## Limitations
+The boot-image rebuild prints `ERROR: module not found: 'blake2b_generic'`. This is normal on SteamOS and harmless. The menu hides this output and saves it to `/tmp/edid-10bpc.log`.
 
-- **SteamOS updates:** the fix's files are on SteamOS's keep list, but the fix has not yet been tested across a SteamOS update. If the flicker comes back after an update, run `status`. If it says `Boot override:  not installed`, run `install` again.
-- **A workaround, not a cure:** the real fix belongs in the HDMI 2.1 patch, which should fall back to 10-bit whenever 12-bit doesn't fit the link.
-- **No 12-bit output:** nothing can use 12-bit color over HDMI while the fix is installed. HDR games use 10-bit, so they are unaffected.
-- **One TV per port:** the fix stores the EDID of the TV that was connected when you installed it. If you connect a different TV or monitor to the same port, run `uninstall`, restart, then run `install` again.
+</details>
 
-## Tests
+<details>
+<summary><b>Limitations</b></summary>
 
-For developers:
+- **SteamOS updates:** the fix's files are on SteamOS's keep list, but the fix hasn't been tested across an update yet.
+- **A workaround, not a cure:** the real fix belongs in the HDMI 2.1 patch, which should fall back to 10-bit whenever 12-bit doesn't fit.
+- **One TV per port:** the fix stores the EDID of the TV connected when you installed it. If you switch TVs, remove the fix, restart, and install it again.
+- **TV on another port:** the fix assumes `HDMI-A-1`. To use another port, start the last part of the command with `CONNECTOR=HDMI-A-2`, as in `CONNECTOR=HDMI-A-2 bash hdr-10bit-fix/edid-10bpc.sh`. Run `ls /sys/class/drm/` to see port names.
 
-```bash
-python3 -m unittest discover -s tests -v
-```
+</details>
 
-The tests rebuild the TCL 65Q750G's color-depth data and check that the patch:
+<details>
+<summary><b>Advanced: commands without the menu</b></summary>
 
-- produces exactly the byte changes verified on real hardware (`0xb8 → 0x98` and `0x67 → 0x61`),
-- changes nothing else,
-- keeps every checksum valid,
-- gives the same result when run twice.
+From the `hdr-10bit-fix` folder:
+
+| Command | What it does |
+|---|---|
+| `sudo bash edid-10bpc.sh status` | Detailed report: EDID flags, boot option, link depth |
+| `sudo bash edid-10bpc.sh test` | Fix on until the next restart |
+| `sudo bash edid-10bpc.sh test-revert` | Test off without restarting |
+| `sudo bash edid-10bpc.sh install` | Install permanently |
+| `sudo bash edid-10bpc.sh uninstall` | Remove completely |
+
+In the repository (not the download), run the tests with `python3 -m unittest discover -s tests -v`. They check that the edit produces exactly the byte changes verified on real hardware (`0xb8 → 0x98` and `0x67 → 0x61`), changes nothing else, and keeps every checksum valid.
+
+</details>
 
 ## License
 
-GPL-3.0. See [LICENSE](../LICENSE).
-
-This is an unofficial community fix, not affiliated with Valve, and provided without warranty. It changes boot settings, so please read the script before running it.
+GPL-3.0. See [LICENSE](../LICENSE). Unofficial, not affiliated with Valve, and provided without warranty.

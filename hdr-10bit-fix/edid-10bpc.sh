@@ -3,7 +3,9 @@
 # driver an edited copy of the TV's EDID without 12- and 16-bit color.
 # Fixes HDR flicker and "No signal" at 4K 120Hz when 12-bit overruns the HDMI 2.1 link.
 #
-# Usage: sudo bash edid-10bpc.sh status|test|test-revert|install|uninstall
+# Run it with no arguments for a simple menu:  bash edid-10bpc.sh
+#
+# Commands for advanced use: sudo bash edid-10bpc.sh status|test|test-revert|install|uninstall
 #   status       show which color depths the TV lists and what the link uses
 #   test         use the 10-bit EDID until the next restart (then replug HDMI)
 #   test-revert  go back to the TV's own EDID without restarting (then replug HDMI)
@@ -14,7 +16,9 @@ set -euo pipefail
 
 CONNECTOR=${CONNECTOR:-HDMI-A-1}
 HERE=$(cd "$(dirname "$0")" && pwd)
+SELF=$HERE/$(basename "$0")
 PATCHER=$HERE/edid-10bpc.py
+MENU=0
 FWDIR=/etc/firmware-edid
 FWREL=edid/$CONNECTOR-10bpc.bin
 FW=$FWDIR/$FWREL
@@ -24,7 +28,11 @@ GRUBD=/etc/default/grub.d/edid-10bpc.cfg
 KEEP=/etc/atomic-update.conf.d/edid-10bpc.conf
 GRUBCFG=/efi/EFI/steamos/grub.cfg
 
+LOGF=/tmp/edid-10bpc.log
+
 log() { echo "$*"; }
+# In the menu, keep technical output out of sight and save it to $LOGF instead.
+quiet() { if [ "$MENU" = 1 ]; then "$@" >>"$LOGF" 2>&1; else "$@"; fi; }
 die() { echo "error: $*" >&2; exit 1; }
 need_root() { [ "$(id -u)" = 0 ] || die "this needs administrator rights. Put sudo in front of the command."; }
 
@@ -71,7 +79,7 @@ save_original() {
 
 make_patched() {
 	local out=$1
-	python3 -I "$PATCHER" "$ORIG" "$out"
+	quiet python3 -I "$PATCHER" "$ORIG" "$out"
 	python3 -I "$PATCHER" --report "$out" >/dev/null || die "the edited EDID still lists 12-bit color. Nothing was changed."
 }
 
@@ -93,12 +101,13 @@ check_conflicts() {
 
 rebuild_boot() {
 	local rc=0 img found=0
-	steamos-readonly disable
+	[ "$MENU" = 1 ] && log "Updating the boot files. This takes a minute or two..."
+	quiet steamos-readonly disable
 	trap 'steamos-readonly enable' EXIT
 	# SteamOS's mkinitcpio reports a harmless "module not found: blake2b_generic"
 	# and exits 1 even though it writes the image, so judge by the image itself.
-	mkinitcpio -P || rc=$?
-	steamos-readonly enable
+	quiet mkinitcpio -P || rc=$?
+	quiet steamos-readonly enable
 	trap - EXIT
 	for img in /boot/initramfs-*.img; do
 		[ -s "$img" ] || continue
@@ -111,10 +120,10 @@ rebuild_boot() {
 		fi
 	done
 	if [ -s "$FW" ] && [ "$found" = 0 ]; then
-		die "the boot image rebuild failed (mkinitcpio exit code $rc), and no boot image contains the edited EDID"
+		die "the boot image rebuild failed (mkinitcpio exit code $rc), and no boot image contains the edited EDID. Details: $LOGF"
 	fi
-	[ "$rc" = 0 ] || log "(mkinitcpio reported exit code $rc, but the boot image was written. This is normal on SteamOS.)"
-	update-grub
+	[ "$rc" = 0 ] || [ "$MENU" = 1 ] || log "(mkinitcpio reported exit code $rc, but the boot image was written. This is normal on SteamOS.)"
+	quiet update-grub
 }
 
 # Prints the pixel format and color depth of the live HDMI 2.1 (FRL) link,
@@ -162,7 +171,8 @@ cmd_test() {
 	make_patched "$tmp"
 	cat "$tmp" > "$d/edid_override"
 	rm -f "$tmp"
-	log "The 10-bit EDID is active until the next restart. Unplug the HDMI cable for 5 seconds, plug it back in, then run: sudo bash $0 status"
+	log "The 10-bit EDID is active until the next restart."
+	[ "$MENU" = 1 ] || log "Unplug the HDMI cable for 5 seconds, plug it back in, then run: sudo bash $SELF status"
 }
 
 cmd_test_revert() {
@@ -195,7 +205,8 @@ EOF
 	else
 		log "WARNING: the boot option was not found in $GRUBCFG"
 	fi
-	log "Done. Restart the Steam Machine, then run: sudo bash $0 status"
+	log "Done. The fix turns on after a restart."
+	[ "$MENU" = 1 ] || log "Restart the Steam Machine, then run: sudo bash $SELF status"
 }
 
 cmd_uninstall() {
@@ -207,11 +218,73 @@ cmd_uninstall() {
 	log "Removed. Restart the Steam Machine to go back to the TV's own EDID. (The backup stays at $ORIG.)"
 }
 
+# One-line state for the menu: installed, testing, not needed, or off.
+fix_state() {
+	local edid=$1
+	if cmdline_has drm.edid_firmware=; then
+		echo "installed"
+	elif [ -f "$GRUBD" ]; then
+		echo "installed, turns on after a restart"
+	elif [ -s "$ORIG" ] && ! cmp -s "$edid" "$ORIG"; then
+		echo "on for testing, until the next restart"
+	elif ! python3 -I "$PATCHER" --report "$edid" >/dev/null; then
+		echo "off"
+	else
+		echo "not needed (your TV does not list 12-bit color)"
+	fi
+}
+
+pause() { read -rp "$1 " _; }
+
+ask_restart() {
+	local answer
+	read -rp "Restart the Steam Machine now? Type y for yes or n for no, then press Enter: " answer
+	case "$answer" in
+		y | Y | yes | Yes) systemctl reboot ;;
+		*) log "OK. The change takes effect at your next restart." ;;
+	esac
+}
+
+cmd_menu() {
+	local edid choice link
+	if [ "$(id -u)" != 0 ]; then
+		log "This tool needs your Steam Machine password."
+		log "If you have never set one, press Ctrl+C, type passwd, press Enter, and choose a password first."
+		exec sudo CONNECTOR="$CONNECTOR" bash "$SELF"
+	fi
+	MENU=1
+	while true; do
+		edid=$(sysfs_edid)
+		link=$(link_depth)
+		echo
+		log "HDR flicker fix"
+		log "  Fix:        $(fix_state "$edid")"
+		log "  HDMI link:  ${link:-not in HDMI 2.1 mode}"
+		echo
+		log "What would you like to do?"
+		log "  1  Try the fix until the next restart"
+		log "  2  Install the fix"
+		log "  3  Remove the fix"
+		log "  4  Quit"
+		read -rp "Type a number and press Enter: " choice
+		echo
+		case "$choice" in
+			1) cmd_test
+			   pause "Now unplug the HDMI cable for 5 seconds, plug it back in, and press Enter." ;;
+			2) cmd_install; ask_restart ;;
+			3) cmd_uninstall; ask_restart ;;
+			4 | q | Q) exit 0 ;;
+			*) log "Please type 1, 2, 3 or 4." ;;
+		esac
+	done
+}
+
 case "${1:-}" in
+	"") cmd_menu ;;
 	status) cmd_status ;;
 	test) cmd_test ;;
 	test-revert) cmd_test_revert ;;
 	install) cmd_install ;;
 	uninstall) cmd_uninstall ;;
-	*) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+	*) sed -n '2,14p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
