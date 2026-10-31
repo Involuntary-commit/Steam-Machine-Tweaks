@@ -4,6 +4,8 @@ Stops your TV from flickering or showing "No signal" when HDR is on at **4K 120H
 
 Tested on a **TCL 65Q750G**. Other TCL TVs, and TVs from other brands, can have the same problem. The menu tells you whether yours does.
 
+This is a follow-up to beaglemoo's [HDMI 2.1 patch](https://github.com/beaglemoo/steam-machine-hdmi21), which makes 4K 120Hz possible on the Steam Machine. Install that patch first.
+
 You won't notice any change in picture quality.
 
 ## Install
