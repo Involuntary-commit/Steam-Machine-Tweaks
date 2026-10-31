@@ -2,6 +2,8 @@
 
 Stops your TV from flickering or showing "No signal" when HDR is on at **4K 120Hz**.
 
+Tested on a **TCL 65Q750G**. Other TCL TVs, and TVs from other brands, can have the same problem. The menu tells you whether yours does.
+
 You won't notice any change in picture quality.
 
 ## Install
@@ -20,6 +22,8 @@ You won't notice any change in picture quality.
 7. Flicker gone? Type **2** and press **Enter** to keep the fix, then **y** to restart.
 
 **No password yet?** In Konsole, type `passwd`, press **Enter**, and choose one. Then go back to step 3.
+
+**Good practice:** this fix changes boot settings with administrator rights. You can see exactly what it changes in the **What it changes on your Steam Machine** section below.
 
 ## Remove it
 

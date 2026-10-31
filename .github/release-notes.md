@@ -1,4 +1,4 @@
-**HDR Flicker Fix:** stops flicker and "No signal" with HDR at 4K 120Hz over HDMI 2.1.
+**HDR Flicker Fix:** stops flicker and "No signal" with HDR at 4K 120Hz over HDMI 2.1. Tested on a TCL 65Q750G.
 
 ### Install
 

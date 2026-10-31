@@ -4,7 +4,7 @@ Simple fixes and add-ons for the Valve Steam Machine. Each one installs with a s
 
 | Tweak | What it does |
 |---|---|
-| [HDR Flicker Fix](hdr-10bit-fix/) | Stops flicker and "No signal" with HDR at 4K 120Hz |
+| [HDR Flicker Fix](hdr-10bit-fix/) | Stops flicker and "No signal" with HDR at 4K 120Hz. Tested on a TCL 65Q750G. |
 
 Open a tweak above for its step-by-step guide.
 
