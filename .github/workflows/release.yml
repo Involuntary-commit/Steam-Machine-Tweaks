@@ -2,6 +2,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version number for the new release
+        required: true
+        default: v1.0.0
 permissions:
   contents: write
 jobs:
@@ -16,4 +22,10 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" hdr-10bit-fix.tar.gz --title "$GITHUB_REF_NAME" --notes-file .github/release-notes.md
+          TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" hdr-10bit-fix.tar.gz --clobber
+          else
+            gh release create "$TAG" hdr-10bit-fix.tar.gz --target "$GITHUB_SHA" --title "$TAG" --notes-file .github/release-notes.md
+          fi
